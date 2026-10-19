@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.env
+.pytest_cache/
+runs/
+*.log
+.DS_Store
+# data/corpus/ is committed on purpose: the frozen corpus + eval set make results reproducible.
+data/smoke_corpus/

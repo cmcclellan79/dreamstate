@@ -1,0 +1,40 @@
+# Default experiment config. Override any field on the CLI with --set key=value.
+
+# --- Models (Tinker IDs; check https://tinker-docs.thinkingmachines.ai/tinker/models/models_and_pricing/) ---
+student_model: Qwen/Qwen3-8B          # the model that sleeps and learns (cheap: ~$0.44/M train tokens)
+teacher_model: Qwen/Qwen3.6-35B-A3B   # writes the fictional corpus + held-out eval set (run once)
+judge_model: Qwen/Qwen3.6-35B-A3B     # verifies cards against source and grades quiz answers
+lora_rank: 32
+
+# --- Corpus ---
+corpus_dir: data/corpus
+n_days: 5                 # wake/sleep cycles
+docs_per_day: 8
+eval_questions_per_doc: 5 # held-out, paraphrased questions written by the teacher
+
+# --- Card making ---
+cards_per_doc: 8
+card_temperature: 0.7
+
+# --- Training (sleep) ---
+learning_rate: 1.0e-4
+batch_size: 16
+# Every condition trains on the same number of tokens per sleep so comparisons are compute-matched.
+# The pool for a condition is cycled (repeated) until this budget is reached.
+train_tokens_per_cycle: 40000
+match_compute: true       # false = one pass over each condition's pool, no repetition
+
+# --- Spaced repetition (condition E) ---
+# Leitner boxes: a card in box b is reviewed again 2**b cycles later. A miss resets it to box 0.
+leitner_max_box: 4
+
+# --- Evaluation ---
+quiz_temperature: 0.0
+max_answer_tokens: 64
+general_eval_n: 200       # MMLU questions for the forgetting check; 0 disables
+concurrency: 32           # max parallel sampling requests
+
+# --- Experiment ---
+conditions: [A, B, C, D, E]
+seeds: [0, 1, 2]
+runs_dir: runs
