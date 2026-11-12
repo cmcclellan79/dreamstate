@@ -38,3 +38,7 @@ concurrency: 32           # max parallel sampling requests
 conditions: [A, B, C, D, E]
 seeds: [0, 1, 2]
 runs_dir: runs
+
+# --- Tracking (Weights & Biases; run `wandb login` once) ---
+use_wandb: true
+wandb_project: dreamstate

@@ -59,8 +59,9 @@ numbers), so every fact is guaranteed new to the student.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,analysis,general-eval]"
+pip install -e ".[dev,general-eval]"
 cp .env.example .env        # add your TINKER_API_KEY
+wandb login                 # results are logged to Weights & Biases
 pytest                      # offline tests, no key needed
 ```
 
@@ -71,12 +72,16 @@ dreamstate smoke                      # 1 day, 2 docs, condition D: cheap end-to
 dreamstate corpus                     # generate the frozen corpus + eval set, then commit data/corpus/
 dreamstate run                        # all conditions x seeds in configs/default.yaml
 dreamstate run -c D E -s 0            # a subset
-dreamstate analyze                    # results table + runs/retention.png
 ```
 
 Override any config field: `dreamstate --set n_days=3 --set student_model=Qwen/Qwen3.5-4B run -c D`.
 
-Outputs per run in `runs/<condition>_seed<k>/`: `metrics.jsonl` (one row per day), `cards_dayNN.jsonl`
+Results go to the `dreamstate` project in Weights & Biases. There is one run per (condition, seed), grouped
+by condition, so charts show the mean ± std over seeds. Each run logs recall per day, mean recall, recall per
+million training tokens, card counts and training loss, plus summary fields `final_recall`, `day1_retention`,
+`total_train_tokens` and `general_delta` for the runs table. Turn it off with `--set use_wandb=false`.
+
+Local backup outputs per run in `runs/<condition>_seed<k>/`: `metrics.jsonl` (one row per day), `cards_dayNN.jsonl`
 (every verified card and whether it was answered correctly before sleep), `general.jsonl`, `config.json`,
 and for E `scheduler.json`.
 
@@ -105,12 +110,13 @@ dreamstate/
   training.py    Datum construction, compute-matched budgets, LoRA SFT loop
   evaluate.py    held-out recall by day, MMLU forgetting check
   experiment.py  one (condition, seed) wake/sleep run
-  analysis.py    results table and retention plot
+  tracking.py    Weights & Biases logging
   cli.py         `dreamstate` command
 configs/default.yaml
 data/corpus/     frozen corpus (commit it)
 tests/           offline tests, including a full pipeline run against fake Tinker clients
 docs/related_work.md
+docs/VERSIONS.md  what differs between the Claude scaffold and the combined version
 ```
 
 ## Known limitations and next steps

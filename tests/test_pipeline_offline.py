@@ -1,6 +1,9 @@
 """End-to-end run of every condition against fake Tinker clients (no API key, no network)."""
 
 import json
+import os
+
+os.environ.setdefault("WANDB_MODE", "disabled")
 from types import SimpleNamespace
 
 import pytest

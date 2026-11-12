@@ -22,6 +22,7 @@ from .corpus import load_docs
 from .evaluate import general_ability, recall_by_day
 from .llm import ChatModel
 from .scheduler import LeitnerScheduler
+from .tracking import Tracker
 from .training import card_datum, doc_datum, fill_budget, train_on
 from .util import append_jsonl, read_jsonl, write_jsonl
 
@@ -57,6 +58,14 @@ async def run_condition(cfg: Config, condition: str, seed: int, service_client, 
     (out / "config.json").write_text(json.dumps({**cfg.to_dict(), "condition": condition, "seed": seed}, indent=2))
 
     rng = random.Random(seed)
+    tracker = Tracker(cfg.use_wandb, cfg.wandb_project, condition, seed, cfg.to_dict(), CONDITIONS[condition])
+    try:
+        await _run_days(cfg, condition, seed, service_client, judge, out, metrics_path, rng, tracker)
+    finally:
+        tracker.finish()
+
+
+async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_path, rng, tracker) -> None:
     tc = await service_client.create_lora_training_client_async(
         base_model=cfg.student_model, rank=cfg.lora_rank, seed=seed,
         user_metadata={"project": "dreamstate", "condition": condition, "seed": str(seed)},
@@ -68,6 +77,7 @@ async def run_condition(cfg: Config, condition: str, seed: int, service_client, 
 
     general0 = await general_ability(student, cfg.general_eval_n)
     append_jsonl(out / "general.jsonl", {"day": 0, "general": general0})
+    tracker.log_general_baseline(general0)
     log.info("[%s s%d] general ability before any sleep: %s", condition, seed, general0)
 
     for day in range(1, cfg.n_days + 1):
@@ -133,6 +143,7 @@ async def run_condition(cfg: Config, condition: str, seed: int, service_client, 
             append_jsonl(out / "general.jsonl", {"day": day, "general": g})
         row["seconds"] = round(time.time() - t0, 1)
         append_jsonl(metrics_path, row)
+        tracker.log_day(row)
         if condition == "E":
             (out / "scheduler.json").write_text(json.dumps(sched.to_dict()))
         log.info("[%s s%d] day %d: recall=%s train_tokens=%s", condition, seed, day,

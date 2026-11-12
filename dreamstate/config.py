@@ -39,6 +39,8 @@ class Config:
     conditions: list[str] = field(default_factory=lambda: ["A", "B", "C", "D", "E"])
     seeds: list[int] = field(default_factory=lambda: [0, 1, 2])
     runs_dir: str = "runs"
+    use_wandb: bool = True
+    wandb_project: str = "dreamstate"
 
     @classmethod
     def load(cls, path: str | Path, overrides: list[str] | None = None) -> "Config":

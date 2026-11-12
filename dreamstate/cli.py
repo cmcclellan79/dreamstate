@@ -4,7 +4,7 @@
     dreamstate smoke                  # 1 day, 2 docs, condition D: checks the whole pipeline cheaply
     dreamstate run                    # all conditions x seeds from the config
     dreamstate run -c D E -s 0        # a subset
-    dreamstate analyze                # results table (+ retention plot if matplotlib is installed)
+    (results go to Weights & Biases, grouped by condition; metrics.jsonl is kept locally as a backup)
 
 Any config field can be overridden: --set n_days=3 --set student_model=Qwen/Qwen3.5-4B
 """
@@ -72,9 +72,6 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("smoke", help="tiny end-to-end check (1 day, 2 docs, condition D)")
 
-    a = sub.add_parser("analyze", help="summarize runs/")
-    a.add_argument("--plot", default="runs/retention.png")
-
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -88,18 +85,10 @@ def main(argv: list[str] | None = None) -> None:
         cfg.n_days, cfg.docs_per_day, cfg.eval_questions_per_doc = 1, 2, 3
         cfg.corpus_dir, cfg.runs_dir = "data/smoke_corpus", "runs/smoke"
         cfg.train_tokens_per_cycle, cfg.general_eval_n = 4000, 0
+        cfg.wandb_project = cfg.wandb_project + "-smoke"
         asyncio.run(_corpus(cfg, overwrite=False))
         asyncio.run(_run(cfg, ["D"], [0]))
         print("Smoke test finished. See runs/smoke/D_seed0/metrics.jsonl")
-    elif args.cmd == "analyze":
-        from .analysis import plot_retention, summarize
-
-        print(summarize(cfg.runs_dir))
-        try:
-            plot_retention(cfg.runs_dir, args.plot)
-            print(f"Retention plot: {args.plot}")
-        except ImportError:
-            print("(install the `analysis` extra for the retention plot)")
 
 
 if __name__ == "__main__":
