@@ -28,6 +28,11 @@ match_compute: true       # false = one pass over each condition's pool, no repe
 # Leitner boxes: a card in box b is reviewed again 2**b cycles later. A miss resets it to box 0.
 leitner_max_box: 4
 
+# --- Contrastive dreaming (condition F) ---
+# Weight on the negative phase: unlikelihood -log(1 - p) on the model's own wrong-answer tokens.
+# Too high can damage general ability; watch general_delta.
+contrastive_alpha: 0.5
+
 # --- Evaluation ---
 quiz_temperature: 0.0
 max_answer_tokens: 64
@@ -35,7 +40,7 @@ general_eval_n: 200       # MMLU questions for the forgetting check; 0 disables
 concurrency: 32           # max parallel sampling requests
 
 # --- Experiment ---
-conditions: [A, B, C, D, E]
+conditions: [A, B, C, D, E, F]
 seeds: [0, 1, 2]
 runs_dir: runs
 

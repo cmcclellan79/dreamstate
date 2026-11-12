@@ -16,14 +16,14 @@ import random
 import time
 from pathlib import Path
 
-from .cards import make_cards, quiz, verify_cards
+from .cards import make_cards, quiz, quiz_with_answers, verify_cards
 from .config import Config
 from .corpus import load_docs
 from .evaluate import general_ability, recall_by_day
 from .llm import ChatModel
 from .scheduler import LeitnerScheduler
 from .tracking import Tracker
-from .training import card_datum, doc_datum, fill_budget, train_on
+from .training import card_datum, contrastive_datums, doc_datum, fill_budget, train_contrastive, train_on
 from .util import append_jsonl, read_jsonl, write_jsonl
 
 log = logging.getLogger(__name__)
@@ -34,7 +34,14 @@ CONDITIONS = {
     "C": "Fine-tune on all verified cards",
     "D": "Fine-tune on missed cards only",
     "E": "Missed cards + spaced resurfacing of old cards",
+    "F": "Contrastive dreaming: missed cards, raise the true answer and lower the model's own wrong answer",
 }
+
+
+def _one(pair):
+    """Wrap a single (datum, n_tokens) as a pool item: ([datum], n_tokens)."""
+    datum, n = pair
+    return [datum], n
 
 
 def run_dir(cfg: Config, condition: str, seed: int) -> Path:
@@ -90,24 +97,30 @@ async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_pa
 
         # ---- wake: make, verify and self-quiz cards (only conditions that use cards) ----
         verified, missed = [], []
-        if condition in {"C", "D", "E"}:
+        if condition in {"C", "D", "E", "F"}:
             made = await make_cards(student, docs, cfg.cards_per_doc, cfg.card_temperature)
             verified = await verify_cards(judge, made, docs_by_id)
-            correct = await quiz(student, judge, verified, cfg.max_answer_tokens, cfg.quiz_temperature)
+            correct, preds = await quiz_with_answers(student, judge, verified, cfg.max_answer_tokens,
+                                                     cfg.quiz_temperature)
             missed = [c for c, ok in zip(verified, correct) if not ok]
+            wrong_answer = {c["card_id"]: p for c, ok, p in zip(verified, correct, preds) if not ok}
             write_jsonl(out / f"cards_day{day:02d}.jsonl",
-                        [{**c, "correct_before_sleep": ok} for c, ok in zip(verified, correct)])
+                        [{**c, "correct_before_sleep": ok, "answer_before_sleep": p}
+                         for c, ok, p in zip(verified, correct, preds)])
             row.update(n_cards_made=len(made), n_verified=len(verified), n_missed=len(missed))
 
         # ---- choose the sleep pool ----
         if condition == "A":
             pool = []
         elif condition == "B":
-            pool = [doc_datum(tokenizer, d) for d in docs]
+            pool = [_one(doc_datum(tokenizer, d)) for d in docs]
         elif condition == "C":
-            pool = [card_datum(tokenizer, c) for c in verified]
+            pool = [_one(card_datum(tokenizer, c)) for c in verified]
         elif condition == "D":
-            pool = [card_datum(tokenizer, c) for c in missed]
+            pool = [_one(card_datum(tokenizer, c)) for c in missed]
+        elif condition == "F":
+            pool = [contrastive_datums(tokenizer, c, wrong_answer[c["card_id"]]) for c in missed]
+            row["n_negatives"] = sum(len(ds) - 1 for ds, _ in pool)
         else:  # E: today's misses + old cards that are due AND missed on re-quiz
             due = sched.due(cycle=day)
             due_ok = await quiz(student, judge, due, cfg.max_answer_tokens, cfg.quiz_temperature)
@@ -117,17 +130,20 @@ async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_pa
             missed_ids = {c["card_id"] for c in missed}
             for c in verified:
                 sched.add(c, day, correct=c["card_id"] not in missed_ids)
-            pool = [card_datum(tokenizer, c) for c in missed + due_missed]
+            pool = [_one(card_datum(tokenizer, c)) for c in missed + due_missed]
             row.update(n_due=len(due), n_due_missed=len(due_missed))
 
         # ---- sleep ----
-        datums = [d for d, _ in pool]
+        # pool items are (datums, n_tokens) so a card's positive/negative pair is scheduled together
         counts = [n for _, n in pool]
-        schedule = fill_budget(list(range(len(datums))), counts, cfg.train_tokens_per_cycle,
+        schedule = fill_budget(list(range(len(pool))), counts, cfg.train_tokens_per_cycle,
                                cfg.match_compute, rng)
-        batch = [datums[i] for i in schedule]
-        stats = await train_on(tc, batch, cfg.batch_size, cfg.learning_rate)
-        row.update(pool_size=len(datums), train_examples=len(batch),
+        batch = [d for i in schedule for d in pool[i][0]]
+        if condition == "F":
+            stats = await train_contrastive(tc, batch, cfg.batch_size, cfg.learning_rate, cfg.contrastive_alpha)
+        else:
+            stats = await train_on(tc, batch, cfg.batch_size, cfg.learning_rate)
+        row.update(pool_size=len(pool), train_examples=len(batch),
                    train_tokens=sum(counts[i] for i in schedule), **stats)
 
         if batch:

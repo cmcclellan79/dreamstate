@@ -97,3 +97,117 @@ def _extract_loss_sum(fb_result) -> float | None:
         if k.startswith("loss") and isinstance(v, (int, float)):
             return float(v)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Condition F: contrastive dreaming (Boltzmann-style positive + negative phase)
+# ---------------------------------------------------------------------------
+#
+# For each missed card we build two datums in the same quiz chat format:
+#   positive: question -> correct answer       weights = +1 on answer tokens
+#   negative: question -> the model's own wrong answer ("its dream")
+#             weights = -1 on tokens from the first one that differs from the correct answer
+# The sign of the weight tells the loss which phase a token belongs to. Tokens the wrong answer shares
+# with the correct one (e.g. "Ilsa" in "Ilsa Brandt" vs "Ilsa Brent") are not pushed down.
+#
+# Loss per token:  positive  -log p           (ordinary cross-entropy: raise the true answer)
+#                  negative  -alpha*log(1-p)  (unlikelihood: lower the model's confabulation)
+#
+# Tinker runs this through forward_backward_custom: it returns per-token logprobs, the loss and its
+# gradient are computed locally in PyTorch (CPU is fine), and the gradient is sent back for the update.
+# Each step therefore costs a forward pass plus a forward-backward pass.
+
+
+def _common_prefix_len(a: list[int], b: list[int]) -> int:
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n
+
+
+def contrastive_datums(tokenizer, card: dict, wrong_answer: str) -> tuple[list[types.Datum], int]:
+    """Positive + negative datums for one missed card. Returns ([pos, neg?], n_tokens).
+
+    The negative datum is dropped if the wrong answer is empty or adds nothing beyond the correct answer.
+    """
+    msgs = [{"role": "system", "content": prompts.QUIZ_SYSTEM}, {"role": "user", "content": card["q"]}]
+    prompt = render_prompt(tokenizer, msgs)
+    eot = end_of_turn_text(tokenizer)
+    good = tokenizer.encode(card["a"] + eot, add_special_tokens=False)
+    pos = make_datum(prompt, good)
+    n_tokens = len(prompt) + len(good)
+
+    bad = tokenizer.encode(wrong_answer.strip() + eot, add_special_tokens=False) if wrong_answer.strip() else []
+    shared = _common_prefix_len(good, bad)
+    if not bad or shared >= len(bad) - 1:  # nothing distinctive left to push down (only end-of-turn)
+        return [pos], n_tokens
+    neg = make_datum(prompt, bad)
+    n_prefix = len(prompt) - 1
+    # -1 on the distinctive wrong tokens; leave the shared prefix and the end-of-turn token alone
+    neg_w = [0.0] * len(_as_list(neg.loss_fn_inputs["weights"]))
+    for i in range(n_prefix + shared, n_prefix + len(bad) - 1):
+        neg_w[i] = -1.0
+    neg = types.Datum(model_input=neg.model_input,
+                      loss_fn_inputs=dict(weights=neg_w, target_tokens=neg.loss_fn_inputs["target_tokens"]))
+    return [pos, neg], n_tokens + len(prompt) + len(bad)
+
+
+def make_contrastive_loss(alpha: float):
+    """Custom loss for TrainingClient.forward_backward_custom (runs locally in PyTorch on returned logprobs)."""
+    import torch
+
+    def loss_fn(data, logprobs_list):
+        total = torch.zeros(())
+        pos_sum = neg_sum = 0.0
+        p_neg = []
+        for datum, lp in zip(data, logprobs_list):
+            w = torch.tensor(_as_list(datum.loss_fn_inputs["weights"]), dtype=lp.dtype).reshape(lp.shape)
+            pos_w, neg_w = w.clamp(min=0), (-w).clamp(min=0)
+            pos = -(lp * pos_w).sum()
+            # log(1 - p) computed stably; the clamp keeps it finite when p -> 1
+            neg = -(torch.log1p(-torch.exp(lp.clamp(max=-1e-6))) * neg_w).sum()
+            total = total + pos + alpha * neg
+            pos_sum += float(pos.detach())
+            neg_sum += float(neg.detach())
+            if neg_w.sum() > 0:
+                p_neg.append(float((torch.exp(lp.detach()) * neg_w).sum() / neg_w.sum()))
+        metrics = {"pos_loss:sum": pos_sum, "neg_loss:sum": neg_sum}
+        if p_neg:
+            metrics["p_wrong_token:mean"] = sum(p_neg) / len(p_neg)
+        return total, metrics
+
+    return loss_fn
+
+
+async def train_contrastive(training_client, datums: list[types.Datum], batch_size: int, lr: float,
+                            alpha: float) -> dict:
+    """Like train_on, but with the positive/negative-phase loss."""
+    if not datums:
+        return {"steps": 0, "loss_per_token": None}
+    loss_fn = make_contrastive_loss(alpha)
+    adam = types.AdamParams(learning_rate=lr)
+    pos_sum = neg_sum = pos_tok = neg_tok = 0.0
+    p_wrong: list[float] = []
+    steps = 0
+    for start in range(0, len(datums), batch_size):
+        batch = datums[start:start + batch_size]
+        fb = await training_client.forward_backward_custom_async(batch, loss_fn)
+        fb_result = await fb.result_async()
+        opt = await training_client.optim_step_async(adam)
+        await opt.result_async()
+        m = getattr(fb_result, "metrics", None) or {}
+        pos_sum += m.get("pos_loss:sum", 0.0)
+        neg_sum += m.get("neg_loss:sum", 0.0)
+        if "p_wrong_token:mean" in m:
+            p_wrong.append(m["p_wrong_token:mean"])
+        for d in batch:
+            w = _as_list(d.loss_fn_inputs["weights"])
+            pos_tok += sum(x for x in w if x > 0)
+            neg_tok += sum(-x for x in w if x < 0)
+        steps += 1
+    return {"steps": steps,
+            "loss_per_token": pos_sum / pos_tok if pos_tok else None,
+            "neg_loss_per_token": neg_sum / neg_tok if neg_tok else None,
+            "p_wrong_token": sum(p_wrong) / len(p_wrong) if p_wrong else None}

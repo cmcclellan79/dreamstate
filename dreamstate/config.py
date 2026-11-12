@@ -30,13 +30,14 @@ class Config:
     match_compute: bool = True
 
     leitner_max_box: int = 4
+    contrastive_alpha: float = 0.5
 
     quiz_temperature: float = 0.0
     max_answer_tokens: int = 64
     general_eval_n: int = 200
     concurrency: int = 32
 
-    conditions: list[str] = field(default_factory=lambda: ["A", "B", "C", "D", "E"])
+    conditions: list[str] = field(default_factory=lambda: ["A", "B", "C", "D", "E", "F"])
     seeds: list[int] = field(default_factory=lambda: [0, 1, 2])
     runs_dir: str = "runs"
     use_wandb: bool = True

@@ -15,6 +15,9 @@ gets wrong, resurfacing old misses on a spaced-repetition schedule.
   cards or on the raw documents, per training token.
 - **H2 (retention):** Resurfacing old missed cards across sleep cycles (Leitner spaced repetition) reduces forgetting
   of earlier days' facts.
+- **H3 (dreaming as unlearning):** Also pushing down the model's own wrong answers (condition F) beats only
+  rehearsing the right ones (D). This is the negative phase of a Boltzmann machine's wake/sleep learning, and
+  Crick & Mitchison's (1983) "reverse learning" theory of REM sleep.
 
 ## One wake/sleep cycle
 
@@ -43,6 +46,7 @@ its favour on the efficiency metric.
 | C | All cards | every verified card from today |
 | D | Missed cards | verified cards answered wrong closed-book |
 | E | Missed + spaced | D, plus old cards that are due for review and missed again |
+| F | Contrastive dreaming | D's missed cards, trained to raise the true answer *and* lower the model's own wrong answer (Boltzmann-style positive + negative phase) |
 
 ## Metrics
 
@@ -68,7 +72,9 @@ pytest                      # offline tests, no key needed
 ## Running
 
 ```bash
-dreamstate smoke                      # 1 day, 2 docs, condition D: cheap end-to-end check
+dreamstate smoke                      # 1 day, 2 docs, conditions D and F: cheap end-to-end check
+dreamstate --config configs/pilot.yaml corpus   # pilot: A vs D vs F, 3 days x 4 docs, 1 seed
+dreamstate --config configs/pilot.yaml run
 dreamstate corpus                     # generate the frozen corpus + eval set, then commit data/corpus/
 dreamstate run                        # all conditions x seeds in configs/default.yaml
 dreamstate run -c D E -s 0            # a subset

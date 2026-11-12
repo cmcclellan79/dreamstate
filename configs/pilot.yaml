@@ -1,0 +1,35 @@
+# Pilot: baseline vs. missed cards vs. contrastive dreaming, kept small to check the effect is worth a full run.
+# Usage: dreamstate --config configs/pilot.yaml corpus && dreamstate --config configs/pilot.yaml run
+
+student_model: Qwen/Qwen3-8B
+teacher_model: Qwen/Qwen3.6-35B-A3B
+judge_model: Qwen/Qwen3.6-35B-A3B
+lora_rank: 32
+
+corpus_dir: data/pilot_corpus
+n_days: 3
+docs_per_day: 4
+eval_questions_per_doc: 5
+
+cards_per_doc: 8
+card_temperature: 0.7
+
+learning_rate: 1.0e-4
+batch_size: 16
+train_tokens_per_cycle: 20000
+match_compute: true
+
+leitner_max_box: 4
+contrastive_alpha: 0.5
+
+quiz_temperature: 0.0
+max_answer_tokens: 64
+general_eval_n: 100
+concurrency: 32
+
+conditions: [A, D, F]
+seeds: [0]
+runs_dir: runs/pilot
+
+use_wandb: true
+wandb_project: dreamstate-pilot

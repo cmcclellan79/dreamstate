@@ -50,10 +50,11 @@ class Tracker:
         data.update({f"recall/day{d}": v for d, v in recall.items()})
         if mean_recall is not None and self.cum_tokens:
             data["recall/per_Mtok"] = mean_recall / (self.cum_tokens / 1e6)
-        for k in ("train_tokens", "train_examples", "pool_size", "steps", "loss_per_token"):
+        for k in ("train_tokens", "train_examples", "pool_size", "steps", "loss_per_token",
+                  "neg_loss_per_token", "p_wrong_token"):
             if row.get(k) is not None:
                 data[f"train/{k}"] = row[k]
-        for k in ("n_cards_made", "n_verified", "n_missed", "n_due", "n_due_missed"):
+        for k in ("n_cards_made", "n_verified", "n_missed", "n_due", "n_due_missed", "n_negatives"):
             if k in row:
                 data[f"cards/{k}"] = row[k]
         if row.get("general") is not None:

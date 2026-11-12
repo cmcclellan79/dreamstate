@@ -1,7 +1,7 @@
 """Command line entry point.
 
     dreamstate corpus                 # generate + freeze the fictional corpus and eval set (once)
-    dreamstate smoke                  # 1 day, 2 docs, condition D: checks the whole pipeline cheaply
+    dreamstate smoke                  # 1 day, 2 docs, conditions D and F: checks the pipeline cheaply
     dreamstate run                    # all conditions x seeds from the config
     dreamstate run -c D E -s 0        # a subset
     (results go to Weights & Biases, grouped by condition; metrics.jsonl is kept locally as a backup)
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("-c", "--conditions", nargs="+")
     r.add_argument("-s", "--seeds", nargs="+", type=int)
 
-    sub.add_parser("smoke", help="tiny end-to-end check (1 day, 2 docs, condition D)")
+    sub.add_parser("smoke", help="tiny end-to-end check (1 day, 2 docs, conditions D and F)")
 
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -87,8 +87,8 @@ def main(argv: list[str] | None = None) -> None:
         cfg.train_tokens_per_cycle, cfg.general_eval_n = 4000, 0
         cfg.wandb_project = cfg.wandb_project + "-smoke"
         asyncio.run(_corpus(cfg, overwrite=False))
-        asyncio.run(_run(cfg, ["D"], [0]))
-        print("Smoke test finished. See runs/smoke/D_seed0/metrics.jsonl")
+        asyncio.run(_run(cfg, ["D", "F"], [0]))
+        print("Smoke test finished. See runs/smoke/D_seed0/ and runs/smoke/F_seed0/metrics.jsonl")
 
 
 if __name__ == "__main__":

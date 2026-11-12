@@ -11,6 +11,7 @@ import pytest
 from dreamstate.config import Config
 from dreamstate.experiment import CONDITIONS, run_condition
 from dreamstate.llm import ChatModel
+from dreamstate.training import _as_list
 from dreamstate.util import read_jsonl, write_jsonl
 
 
@@ -53,6 +54,14 @@ class FakeTrainer:
     async def forward_backward_async(self, data, loss_fn):
         return Future(SimpleNamespace(metrics={"loss:sum": 1.0 * len(data)}))
 
+    async def forward_backward_custom_async(self, data, loss_fn):
+        import torch
+
+        lps = [torch.full((len(_as_list(d.loss_fn_inputs["weights"])),), -1.0, requires_grad=True) for d in data]
+        loss, metrics = loss_fn(data, lps)
+        loss.backward()
+        return Future(SimpleNamespace(metrics={**metrics, "loss:sum": float(loss.detach())}))
+
     async def optim_step_async(self, params):
         self.steps += 1
         return Future(None)
@@ -71,6 +80,8 @@ class FakeService:
 
 @pytest.mark.parametrize("condition", list(CONDITIONS))
 async def test_all_conditions_run(tmp_path, tok, condition):
+    if condition == "F":
+        pytest.importorskip("torch")
     corpus = tmp_path / "corpus"
     for day in (1, 2, 3):
         docs = [{"doc_id": f"d{day}_{i}", "day": day, "title": "T", "text": "some invented facts"} for i in range(2)]
@@ -96,3 +107,8 @@ async def test_all_conditions_run(tmp_path, tok, condition):
     if condition == "E":
         assert rows[1]["n_due"] > 0          # day-1 misses resurface on day 2
         assert rows[0]["n_missed"] == rows[0]["n_verified"] == 6
+    if condition == "F":
+        assert rows[0]["n_negatives"] == 6          # every missed card got its own wrong answer as a negative
+        assert rows[0]["p_wrong_token"] is not None
+        cards = read_jsonl(tmp_path / "runs" / "F_seed0" / "cards_day01.jsonl")
+        assert all(c["answer_before_sleep"] == "wrong" for c in cards)

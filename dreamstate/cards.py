@@ -61,11 +61,18 @@ async def grade(judge: ChatModel, questions: list[str], refs: list[str], preds: 
     return [parse_verdict(v) for v in verdicts]
 
 
+async def quiz_with_answers(student: ChatModel, judge: ChatModel, cards: list[dict], max_tokens: int,
+                            temperature: float) -> tuple[list[bool], list[str]]:
+    """Closed-book self-quiz over cards. Returns (correct per card, the student's answers)."""
+    if not cards:
+        return [], []
+    qs = [c["q"] for c in cards]
+    preds = await answer_closed_book(student, qs, max_tokens, temperature)
+    return await grade(judge, qs, [c["a"] for c in cards], preds), preds
+
+
 async def quiz(student: ChatModel, judge: ChatModel, cards: list[dict], max_tokens: int,
                temperature: float) -> list[bool]:
     """Closed-book self-quiz over cards. Returns correct/incorrect per card."""
-    if not cards:
-        return []
-    qs = [c["q"] for c in cards]
-    preds = await answer_closed_book(student, qs, max_tokens, temperature)
-    return await grade(judge, qs, [c["a"] for c in cards], preds)
+    correct, _ = await quiz_with_answers(student, judge, cards, max_tokens, temperature)
+    return correct
