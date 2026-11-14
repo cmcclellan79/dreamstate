@@ -27,9 +27,18 @@ def _service_client():
         load_dotenv()
     except ImportError:
         pass
-    if not os.environ.get("TINKER_API_KEY"):
-        sys.exit("TINKER_API_KEY is not set. Copy .env.example to .env and add your key.")
     import tinker
+
+    # TINKER_API_KEY (e.g. from .env) wins; otherwise the SDK falls back to TINKER_CREDENTIAL_CMD or the
+    # credential stored by `tinker auth login`.
+    try:
+        from tinker.auth import tinker_has_credentials
+
+        has_credentials = tinker_has_credentials()
+    except ImportError:  # older SDKs without the auth helpers
+        has_credentials = bool(os.environ.get("TINKER_API_KEY"))
+    if not has_credentials:
+        sys.exit("No Tinker credentials found. Run `tinker auth login`, or put TINKER_API_KEY=... in .env.")
 
     return tinker.ServiceClient()
 
