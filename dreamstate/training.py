@@ -75,8 +75,9 @@ async def train_on(training_client, datums: list[types.Datum], batch_size: int, 
     adam = types.AdamParams(learning_rate=lr)
     for start in range(0, len(datums), batch_size):
         batch = datums[start:start + batch_size]
-        fb = await training_client.forward_backward_async(data=batch, loss_fn="cross_entropy")
-        opt = await training_client.optim_step_async(adam)
+        # submit both, then wait: Tinker pipelines the optimizer step behind the forward-backward
+        fb = training_client.forward_backward(data=batch, loss_fn="cross_entropy")
+        opt = training_client.optim_step(adam)
         fb_result = await fb.result_async()
         await opt.result_async()
         batch_loss = _extract_loss_sum(fb_result)
@@ -216,9 +217,9 @@ async def train_contrastive(training_client, datums: list[types.Datum], batch_si
     steps = 0
     for start in range(0, len(datums), batch_size):
         batch = datums[start:start + batch_size]
-        fb = await training_client.forward_backward_custom_async(batch, loss_fn)
+        fb = training_client.forward_backward_custom(batch, loss_fn)
+        opt = training_client.optim_step(adam)
         fb_result = await fb.result_async()
-        opt = await training_client.optim_step_async(adam)
         await opt.result_async()
         m = getattr(fb_result, "metrics", None) or {}
         pos_sum += m.get("pos_loss:sum", 0.0)

@@ -73,12 +73,12 @@ async def run_condition(cfg: Config, condition: str, seed: int, service_client, 
 
 
 async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_path, rng, tracker) -> None:
-    tc = await service_client.create_lora_training_client_async(
+    tc = await service_client.create_lora_training_client(
         base_model=cfg.student_model, rank=cfg.lora_rank, seed=seed,
         user_metadata={"project": "dreamstate", "condition": condition, "seed": str(seed)},
     )
     tokenizer = tc.get_tokenizer()
-    sampler = await tc.save_weights_and_get_sampling_client_async(name=f"{condition}-s{seed}-day00")
+    sampler = await tc.save_weights_and_get_sampling_client(name=f"{condition}-s{seed}-day00")
     student = ChatModel(sampler, tokenizer, cfg.concurrency)
     sched = LeitnerScheduler(cfg.leitner_max_box)
 
@@ -148,7 +148,7 @@ async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_pa
                    train_tokens=sum(counts[i] for i in schedule), **stats)
 
         if batch:
-            sampler = await tc.save_weights_and_get_sampling_client_async(name=f"{condition}-s{seed}-day{day:02d}")
+            sampler = await tc.save_weights_and_get_sampling_client(name=f"{condition}-s{seed}-day{day:02d}")
             student = ChatModel(sampler, tokenizer, cfg.concurrency)
 
         # ---- eval ----

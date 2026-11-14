@@ -5,7 +5,7 @@ description = "Sleep-phase self-quizzing: consolidating in-context knowledge int
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "tinker>=0.33",
+    "tinker>=0.39",
     "transformers>=4.45",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",

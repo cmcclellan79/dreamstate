@@ -61,7 +61,7 @@ class ChatModel:
         prompt = types.ModelInput.from_ints(render_prompt(self.tokenizer, messages))
         params = types.SamplingParams(max_tokens=max_tokens, temperature=temperature, stop=self.stop, seed=seed)
         async with self._sem:
-            result = await self.client.sample_async(prompt=prompt, num_samples=1, sampling_params=params)
+            result = await self.client.sample(prompt=prompt, num_samples=1, sampling_params=params)
         text = self.tokenizer.decode(result.sequences[0].tokens, skip_special_tokens=True)
         return text.strip()
 
@@ -71,5 +71,5 @@ class ChatModel:
 
 async def make_chat_model(service_client, base_model: str, concurrency: int = 32) -> ChatModel:
     """A ChatModel over an untrained base model (used for teacher and judge)."""
-    sampler = await service_client.create_sampling_client_async(base_model=base_model)
+    sampler = await service_client.create_sampling_client(base_model=base_model)
     return ChatModel(sampler, sampler.get_tokenizer(), concurrency)

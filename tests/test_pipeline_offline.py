@@ -22,7 +22,7 @@ class FakeSampler:
     def get_tokenizer(self):
         return self.tok
 
-    async def sample_async(self, prompt, num_samples, sampling_params):
+    async def sample(self, prompt, num_samples, sampling_params):
         text = self.tok.decode(prompt.to_ints())
         if "flashcards" in text:
             reply = json.dumps([{"q": f"Q{i}?", "a": f"A{i}"} for i in range(3)])
@@ -51,10 +51,10 @@ class FakeTrainer:
     def get_tokenizer(self):
         return self.tok
 
-    async def forward_backward_async(self, data, loss_fn):
+    def forward_backward(self, data, loss_fn):
         return Future(SimpleNamespace(metrics={"loss:sum": 1.0 * len(data)}))
 
-    async def forward_backward_custom_async(self, data, loss_fn):
+    def forward_backward_custom(self, data, loss_fn):
         import torch
 
         lps = [torch.full((len(_as_list(d.loss_fn_inputs["weights"])),), -1.0, requires_grad=True) for d in data]
@@ -62,11 +62,11 @@ class FakeTrainer:
         loss.backward()
         return Future(SimpleNamespace(metrics={**metrics, "loss:sum": float(loss.detach())}))
 
-    async def optim_step_async(self, params):
+    def optim_step(self, params):
         self.steps += 1
         return Future(None)
 
-    async def save_weights_and_get_sampling_client_async(self, name):
+    async def save_weights_and_get_sampling_client(self, name):
         return FakeSampler(self.tok, self.steps)
 
 
@@ -74,7 +74,7 @@ class FakeService:
     def __init__(self, tok):
         self.tok = tok
 
-    async def create_lora_training_client_async(self, **kw):
+    async def create_lora_training_client(self, **kw):
         return FakeTrainer(self.tok)
 
 
