@@ -23,6 +23,7 @@ class Config:
 
     cards_per_doc: int = 8
     card_temperature: float = 0.7
+    card_max_answer_words: int = 8
 
     learning_rate: float = 1e-4
     batch_size: int = 16

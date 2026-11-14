@@ -12,11 +12,17 @@ from .util import extract_json, parse_verdict
 log = logging.getLogger(__name__)
 
 
-async def make_cards(student: ChatModel, docs: list[dict], n_per_doc: int, temperature: float) -> list[dict]:
-    """Student reads each document in context and writes Q/A flashcards."""
+async def make_cards(student: ChatModel, docs: list[dict], n_per_doc: int, temperature: float,
+                     max_answer_words: int | None = None) -> list[dict]:
+    """Student reads each document in context and writes Q/A flashcards.
+
+    Cards whose answer is longer than max_answer_words are dropped: long, sentence-style answers are hard to
+    learn and grade, and in condition F their first divergent token is often a filler word like "The".
+    """
     batch = [[{"role": "user", "content": prompts.MAKE_CARDS.format(n=n_per_doc, text=d["text"])}] for d in docs]
     outputs = await student.chat_many(batch, max_tokens=1500, temperature=temperature)
     cards: list[dict] = []
+    too_long = 0
     for doc, raw in zip(docs, outputs):
         try:
             items = extract_json(raw)
@@ -30,10 +36,15 @@ async def make_cards(student: ChatModel, docs: list[dict], n_per_doc: int, tempe
             if not isinstance(it, dict):
                 continue
             q, a = str(it.get("q", "")).strip(), str(it.get("a", "")).strip()
+            if max_answer_words and len(a.split()) > max_answer_words:
+                too_long += 1
+                continue
             if q and a:
                 cards.append({"card_id": f"{doc['doc_id']}_c{k}", "doc_id": doc["doc_id"], "day": doc["day"],
                               "q": q, "a": a})
                 k += 1
+    if too_long:
+        log.info("dropped %d cards with answers over %d words", too_long, max_answer_words)
     return cards
 
 

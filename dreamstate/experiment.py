@@ -98,7 +98,8 @@ async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_pa
         # ---- wake: make, verify and self-quiz cards (only conditions that use cards) ----
         verified, missed = [], []
         if condition in {"C", "D", "E", "F"}:
-            made = await make_cards(student, docs, cfg.cards_per_doc, cfg.card_temperature)
+            made = await make_cards(student, docs, cfg.cards_per_doc, cfg.card_temperature,
+                                    cfg.card_max_answer_words)
             verified = await verify_cards(judge, made, docs_by_id)
             correct, preds = await quiz_with_answers(student, judge, verified, cfg.max_answer_tokens,
                                                      cfg.quiz_temperature)

@@ -10,6 +10,9 @@ Write {n} short documents (150-250 words each) for day {day} of a chronicle. Mix
 encyclopedia entry, letter, meeting minutes, field report. Each document should contain 6-10 distinct, \
 checkable facts.
 
+Invent every name yourself. Do not borrow names, places or objects from existing books, films, TV shows, \
+games or mythology, and avoid joke or meme names.
+
 Do not reuse any of these names already used on earlier days: {used_names}
 
 Return ONLY JSON: a list of objects with keys "title", "genre", "text", "entities" (list of the proper \
@@ -18,7 +21,8 @@ names you invented in that document)."""
 EVAL_QUESTIONS = """Below is a document. Write {n} short-answer questions that test facts stated in it.
 
 Rules:
-- Each question must be answerable from the document alone, with a short answer (a name, number, date or phrase).
+- Each question must be answerable from the document alone, with a short answer: a name, number, date or \
+phrase of at most 6 words. Never a full sentence.
 - Paraphrase: do NOT copy the document's sentence structure or distinctive wording into the question.
 - Cover different facts; no two questions about the same fact.
 - Each question must make sense on its own without the document (name the entity it's about).
@@ -33,8 +37,15 @@ Return ONLY JSON: a list of objects with keys "question" and "answer"."""
 MAKE_CARDS = """Read the document below carefully. You will NOT be able to see it again. Write {n} flashcards \
 that would help you remember its most important facts later.
 
-Each flashcard has a question on the front and a short answer on the back. Questions must name the entity \
-they're about so they make sense without the document.
+Rules:
+- Each flashcard tests exactly ONE fact.
+- The answer is only the fact itself: a name, number, date or short phrase of at most 6 words. Never a full \
+sentence, and never repeat words from the question.
+- The question must name the entity it's about, so it makes sense without the document.
+
+Example:
+  good: {{"q": "Which team inspected Sector 7 of the Moonlet of Oria?", "a": "Inspection Team Delta-9"}}
+  bad:  {{"q": "Which team inspected Sector 7?", "a": "The team that inspected Sector 7 was Inspection Team Delta-9."}}
 
 Document:
 \"\"\"{text}\"\"\"
@@ -56,7 +67,8 @@ Reply ONLY with JSON: {{"valid": true}} or {{"valid": false}}."""
 
 # ---------- Closed-book quiz (student, no document) ----------
 
-QUIZ_SYSTEM = "Answer the question with a short, direct answer. No explanation."
+QUIZ_SYSTEM = ("Reply with only the answer itself: a name, number, date or short phrase of a few words. "
+               "Do not repeat the question, write a sentence or explain.")
 
 # ---------- Grading (judge) ----------
 

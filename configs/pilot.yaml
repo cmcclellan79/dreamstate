@@ -13,6 +13,7 @@ eval_questions_per_doc: 5
 
 cards_per_doc: 8
 card_temperature: 0.7
+card_max_answer_words: 8   # drop cards whose answer is longer (prompt asks for <= 6 words)
 
 learning_rate: 1.0e-4
 batch_size: 16
