@@ -31,6 +31,8 @@ class Config:
 
     leitner_max_box: int = 4
     contrastive_alpha: float = 0.5
+    negative_scope: str = "first"
+    neg_prob_cap: float = 0.95
 
     quiz_temperature: float = 0.0
     max_answer_tokens: int = 64

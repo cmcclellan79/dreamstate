@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import random
 
 from tinker import types
@@ -127,11 +128,19 @@ def _common_prefix_len(a: list[int], b: list[int]) -> int:
     return n
 
 
-def contrastive_datums(tokenizer, card: dict, wrong_answer: str) -> tuple[list[types.Datum], int]:
+def contrastive_datums(tokenizer, card: dict, wrong_answer: str,
+                       negative_scope: str = "first") -> tuple[list[types.Datum], int]:
     """Positive + negative datums for one missed card. Returns ([pos, neg?], n_tokens).
+
+    negative_scope="first" pushes down only the first token where the wrong answer leaves the correct one:
+    that is the model's actual mistake. The tokens after it mostly complete a word the model has already
+    committed to, so it is near-certain of them (p ~ 0.99+), and unlikelihood there gives huge gradients
+    that teach the wrong lesson. "all" pushes down every divergent token (the original behaviour).
 
     The negative datum is dropped if the wrong answer is empty or adds nothing beyond the correct answer.
     """
+    if negative_scope not in {"first", "all"}:
+        raise ValueError(f"negative_scope must be 'first' or 'all', got {negative_scope!r}")
     msgs = [{"role": "system", "content": prompts.QUIZ_SYSTEM}, {"role": "user", "content": card["q"]}]
     prompt = render_prompt(tokenizer, msgs)
     eot = end_of_turn_text(tokenizer)
@@ -147,16 +156,26 @@ def contrastive_datums(tokenizer, card: dict, wrong_answer: str) -> tuple[list[t
     n_prefix = len(prompt) - 1
     # -1 on the distinctive wrong tokens; leave the shared prefix and the end-of-turn token alone
     neg_w = [0.0] * len(_as_list(neg.loss_fn_inputs["weights"]))
-    for i in range(n_prefix + shared, n_prefix + len(bad) - 1):
+    end = n_prefix + shared + 1 if negative_scope == "first" else n_prefix + len(bad) - 1
+    for i in range(n_prefix + shared, end):
         neg_w[i] = -1.0
     neg = types.Datum(model_input=neg.model_input,
                       loss_fn_inputs=dict(weights=neg_w, target_tokens=neg.loss_fn_inputs["target_tokens"]))
     return [pos, neg], n_tokens + len(prompt) + len(bad)
 
 
-def make_contrastive_loss(alpha: float):
-    """Custom loss for TrainingClient.forward_backward_custom (runs locally in PyTorch on returned logprobs)."""
+def make_contrastive_loss(alpha: float, neg_prob_cap: float = 0.95):
+    """Custom loss for TrainingClient.forward_backward_custom (runs locally in PyTorch on returned logprobs).
+
+    The unlikelihood gradient w.r.t. a token's logprob is alpha * p / (1 - p), which explodes as p -> 1.
+    Above neg_prob_cap the term continues linearly in logprob with the slope it has at the cap, so
+    confident wrong tokens are still pushed down but the per-token gradient is bounded at
+    alpha * cap / (1 - cap), i.e. 9.5 for alpha=0.5, cap=0.95.
+    """
     import torch
+
+    max_lp = math.log(neg_prob_cap)
+    slope_at_cap = neg_prob_cap / (1 - neg_prob_cap)
 
     def loss_fn(data, logprobs_list):
         total = torch.zeros(())
@@ -167,7 +186,11 @@ def make_contrastive_loss(alpha: float):
             pos_w, neg_w = w.clamp(min=0), (-w).clamp(min=0)
             pos = -(lp * pos_w).sum()
             # log(1 - p) computed stably; the clamp keeps it finite when p -> 1
-            neg = -(torch.log1p(-torch.exp(lp.clamp(max=-1e-6))) * neg_w).sum()
+            # -log(1-p) up to the cap, then continued linearly in logprob with the slope it has at the cap,
+            # so near-certain wrong tokens still get pushed down, just with a bounded gradient
+            lp_c = lp.clamp(max=max_lp)
+            neg_tok = -torch.log1p(-torch.exp(lp_c)) + (lp - lp_c) * slope_at_cap
+            neg = (neg_tok * neg_w).sum()
             total = total + pos + alpha * neg
             pos_sum += float(pos.detach())
             neg_sum += float(neg.detach())
@@ -182,11 +205,11 @@ def make_contrastive_loss(alpha: float):
 
 
 async def train_contrastive(training_client, datums: list[types.Datum], batch_size: int, lr: float,
-                            alpha: float) -> dict:
+                            alpha: float, neg_prob_cap: float = 0.95) -> dict:
     """Like train_on, but with the positive/negative-phase loss."""
     if not datums:
         return {"steps": 0, "loss_per_token": None}
-    loss_fn = make_contrastive_loss(alpha)
+    loss_fn = make_contrastive_loss(alpha, neg_prob_cap)
     adam = types.AdamParams(learning_rate=lr)
     pos_sum = neg_sum = pos_tok = neg_tok = 0.0
     p_wrong: list[float] = []

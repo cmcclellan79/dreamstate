@@ -119,7 +119,7 @@ async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_pa
         elif condition == "D":
             pool = [_one(card_datum(tokenizer, c)) for c in missed]
         elif condition == "F":
-            pool = [contrastive_datums(tokenizer, c, wrong_answer[c["card_id"]]) for c in missed]
+            pool = [contrastive_datums(tokenizer, c, wrong_answer[c["card_id"]], cfg.negative_scope) for c in missed]
             row["n_negatives"] = sum(len(ds) - 1 for ds, _ in pool)
         else:  # E: today's misses + old cards that are due AND missed on re-quiz
             due = sched.due(cycle=day)
@@ -140,7 +140,8 @@ async def _run_days(cfg, condition, seed, service_client, judge, out, metrics_pa
                                cfg.match_compute, rng)
         batch = [d for i in schedule for d in pool[i][0]]
         if condition == "F":
-            stats = await train_contrastive(tc, batch, cfg.batch_size, cfg.learning_rate, cfg.contrastive_alpha)
+            stats = await train_contrastive(tc, batch, cfg.batch_size, cfg.learning_rate, cfg.contrastive_alpha,
+                                            cfg.neg_prob_cap)
         else:
             stats = await train_on(tc, batch, cfg.batch_size, cfg.learning_rate)
         row.update(pool_size=len(pool), train_examples=len(batch),

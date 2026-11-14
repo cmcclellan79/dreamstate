@@ -21,6 +21,8 @@ match_compute: true
 
 leitner_max_box: 4
 contrastive_alpha: 0.5
+negative_scope: first     # push down only the first token where the wrong answer diverges ("all" = every divergent token)
+neg_prob_cap: 0.95        # clamp p before -log(1-p): bounds the per-token gradient at alpha*cap/(1-cap)
 
 quiz_temperature: 0.0
 max_answer_tokens: 64
