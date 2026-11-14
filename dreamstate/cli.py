@@ -39,6 +39,11 @@ def _service_client():
         has_credentials = bool(os.environ.get("TINKER_API_KEY"))
     if not has_credentials:
         sys.exit("No Tinker credentials found. Run `tinker auth login`, or put TINKER_API_KEY=... in .env.")
+    if os.environ.get("TINKER_API_KEY"):
+        logging.getLogger(__name__).info(
+            "Tinker credential: TINKER_API_KEY (from .env or your shell); this overrides `tinker auth login`")
+    else:
+        logging.getLogger(__name__).info("Tinker credential: stored login from `tinker auth login`")
 
     return tinker.ServiceClient()
 
@@ -85,7 +90,17 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     cfg = Config.load(args.config, args.set)
+    try:
+        _dispatch(args, cfg)
+    except Exception as e:  # noqa: BLE001 - only to add a hint for auth failures, then re-raise
+        if type(e).__name__ == "AuthenticationError":
+            print("\nTinker rejected the credential (401). If `tinker auth status` works but this fails, "
+                  "a TINKER_API_KEY in .env or your shell is overriding your login: remove it and retry.",
+                  file=sys.stderr)
+        raise
 
+
+def _dispatch(args, cfg: Config) -> None:
     if args.cmd == "corpus":
         asyncio.run(_corpus(cfg, args.overwrite))
     elif args.cmd == "run":
