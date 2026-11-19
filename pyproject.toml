@@ -3,7 +3,7 @@ name = "dreamstate"
 version = "0.1.0"
 description = "Sleep-phase self-quizzing: consolidating in-context knowledge into LLM weights with targeted flashcards"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"  # tinker needs 3.11+
 dependencies = [
     "tinker>=0.39",
     "transformers>=4.45",
